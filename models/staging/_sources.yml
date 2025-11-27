@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: raw_data
+    database: credix-challenge
+    schema: raw_data
+    tables:
+      - name: assets
+      - name: ratings

@@ -1,0 +1,67 @@
+semantic_models:
+  - name: credit_risk_model
+    description: |
+      The core risk model. One row per asset.
+      Granularity: Asset ID.
+    model: ref('fct_credit_risk')
+    defaults:
+      agg_time_dimension: risk_month
+    
+    entities:
+      - name: asset_id
+        type: primary
+      - name: buyer_tax_id
+        type: foreign
+    
+    dimensions:
+      - name: risk_month
+        type: time
+        type_params:
+          time_granularity: month
+        expr: date_trunc(due_date, month)
+      
+      - name: buyer_state
+        type: categorical
+      
+      - name: current_rating
+        type: categorical
+        
+      - name: collection_status
+        type: categorical
+
+    measures:
+      - name: measure_exposure
+        description: Sum of face value of all assets
+        agg: sum
+        expr: face_value
+        
+      - name: measure_loss
+        description: Calculated Cost of Risk (Face Value * Provision Rate)
+        agg: sum
+        expr: cost_of_risk_amount
+        
+      - name: measure_loan_count
+        description: Count of unique loans
+        agg: count
+        expr: asset_id
+
+metrics:
+  - name: total_exposure
+    label: "Total Exposure"
+    type: simple
+    type_params:
+      measure: measure_exposure
+
+  - name: total_loss
+    label: "Total Expected Loss"
+    type: simple
+    type_params:
+      measure: measure_loss
+
+  - name: portfolio_provision_rate
+    label: "Portfolio Provision Rate"
+    description: The % of the portfolio we expect to lose. (Loss / Exposure)
+    type: ratio
+    type_params:
+      numerator: total_loss
+      denominator: total_exposure
