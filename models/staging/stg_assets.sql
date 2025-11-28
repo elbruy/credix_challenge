@@ -7,11 +7,11 @@ with
             to_hex(
                 md5(
                     concat(
-                        cast(created_at as string),
-                        cast(buyer_tax_id as string),
-                        cast(face_value as string),
-                        cast(settled_at as string),
-                        cast(buyer_state as string)
+                        coalesce(cast(created_at as string), 'MISSING_TIMESTAMP'),
+                        coalesce(cast(buyer_tax_id as string), 'MISSING_TAX_ID'),
+                        coalesce(cast(face_value as string), 'MISSING_FACE_VALUE'),
+                        coalesce(cast(settled_at as string), 'MISSING_SETTLEMENT_DATE'),
+                        coalesce(buyer_state, 'MISSING_BUYER_STATE')
                     )
                 )
             ) as asset_id,
