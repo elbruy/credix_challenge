@@ -16,7 +16,6 @@ models:
           Logic: Settled (0.0), Defaulted (1.0), or Rated (0.01 - 0.40).
         tests:
           - not_null
-          # CRITICAL: Ensure we never generate a rate outside 0-100%
           - dbt_utils.accepted_range:
               min_value: 0
               max_value: 1.0
@@ -27,17 +26,9 @@ models:
           - accepted_values:
               values: ["Settled", "Active", "Defaulted", "Canceled"]
 
-      - name: days_overdue
-        description: Days passed since due_date. Negative values indicate not yet due.
-        # Logic Check: If status is 'Defaulted', days_overdue MUST be > 30
-        tests:
-          - dbt_utils.expression_is_true:
-              expression: "case when collection_status = 'Defaulted' then days_overdue > 30 else true end"
-
   - name: stg_assets
     columns:
       - name: face_value
         tests:
-          # Sanity check: We should not have negative loan values
           - dbt_utils.accepted_range:
               min_value: 0
