@@ -2,7 +2,7 @@
 
 ## 1. Project Overview & Goal
 
-This project establishes a scalable data pipeline to calculate the **Cost of Risk** (Expected Loss) for the credit portfolio. It transforms raw Postgres data into a trusted Mart and a Semantic Layer to answer: _How much money are we expected to lose based on current portfolio performance?_
+This project establishes a scalable, trusted data pipeline to calculate the **Cost of Risk** (Expected Loss) for the credit portfolio. It transforms raw Postgres data into a "Gold" Mart and a Semantic Layer to answer the critical business question: _How much money are we expected to lose based on current portfolio performance?_
 
 ### Key Metrics Implemented
 
@@ -10,43 +10,70 @@ This project establishes a scalable data pipeline to calculate the **Cost of Ris
 - **Provision Rate:** Risk percentage assigned to an asset (0% to 100%).
 - **Cost of Risk:** `Face Value` \* `Provision Rate`.
 
+---
+
 ## 2. Architecture & Lineage
 
-The project follows a standard Medallion Architecture (Bronze -> Silver -> Gold) using **dbt Core** and **BigQuery**:
+The project follows a standard Medallion Architecture (Bronze -> Silver -> Gold) using **dbt Core** and **BigQuery**.
 
-- **Staging (Bronze):** Cleaning, casting, and surrogate key generation.
+![Lineage Graph](lineage_graph.png)
+
+- **Staging (Bronze):** Cleaning, casting, and "Ultimate Surrogate Key" generation.
 - **Intermediate (Silver):** Logic isolation.
-  - `int_latest_ratings`: Handles the "Many-to-One" relationship of ratings to buyers, isolating the _latest_ valid rating using window functions.
-- **Facts (Gold):** Business logic application (`fct_credit_risk`).
+  - `int_latest_ratings`: Handles the "Many-to-One" relationship of ratings to buyers, isolating the _latest_ valid rating.
+- **Facts (Gold):** Business logic application (`fct_credit_risk`) and aggregations (`mart_monthly_risk_summary`).
 - **Semantic Layer:** MetricFlow definition (`credit_risk.yml`) for consistent slicing by time and cohort.
+
+---
 
 ## 3. Data Engineering Challenges & Solutions
 
-During the development phase, we encountered and resolved three critical data quality issues.
+During the development phase, we resolved three critical data quality issues to ensure the engine is "Production-Hardened."
 
 ### A. The "Ghost Loan" Artifacts
 
-- **Issue:** The raw dataset contained ~450+ records with `face_value = 0.00` and status `Settled`.
-- **Diagnosis:** These appeared to be technical artifacts or system logs rather than valid financial liabilities.
-- **Solution:** Implemented a strict filter in `stg_assets` to exclude zero-value records, preventing the artificial inflation of the "Loan Count" metric (which would have skewed average ticket size analysis).
+- **Issue:** The raw dataset contained ~450+ records with `face_value = 0.00`.
+- **Diagnosis:** These were technical artifacts/logs rather than valid financial liabilities.
+- **Solution:** Implemented a strict filter in `stg_assets` to exclude zero-value records, preventing the artificial inflation of "Loan Count" metrics.
 
 ### B. Versioning vs. Duplication
 
-- **Issue:** The system logs multiple rows for the "same" loan when attributes change (e.g., a **Due Date** renegotiation or a **Settlement Date** update). Standard `SELECT DISTINCT` failed to deduplicate these because the rows were not identical.
-- **Decision:** Instead of arbitrarily picking one row, we treated these as **Distinct Asset Versions**.
-- **Solution:** Implemented an "Ultimate Surrogate Key" in `stg_assets` that hashes **all** business attributes (`State`, `Settlement`, `Due Date`, `Status`).
-  - _Result:_ A Due Date extension is treated as a new liability version, ensuring full traceability of contractual changes without dropping data.
+- **Issue:** The source system logs multiple rows for the "same" loan when attributes change (e.g., a renegotiated Due Date). Standard hashing caused key collisions.
+- **Solution:** Implemented an "Ultimate Surrogate Key" that hashes **all** business attributes (`State`, `Settlement`, `Due Date`, `Status`). This preserves contractual history (versioning) without breaking uniqueness tests.
 
 ### C. The "Implicit Default" Logic Gap
 
-- **Issue:** Some loans were marked as `Active` in the source system despite being >30 days overdue.
-- **Impact:** Calculating Provision Rate based solely on the raw status resulted in dangerous under-provisioning (assigning 5% risk to what should be 100% risk).
+- **Issue:** Some loans were marked `Active` in the source despite being >30 days overdue.
 - **Solution:** Implemented a "Business Logic Override" in `fct_credit_risk`.
-  - _Logic:_ If `days_overdue > 30`, the status is forced to `Defaulted` (100% Provision), regardless of the raw system label.
+  - _Rule:_ If `days_overdue > 30`, the status is forced to `Defaulted` (100% Provision).
+  - _Impact:_ Caught 322 instances of under-provisioned risk.
 
-## 4. The Semantic Layer (MetricFlow)
+---
 
-This project leverages the modern dbt Semantic Layer. A time spine (`metricflow_time_spine`) was registered to allow for continuous time-series analysis.
+## 4. 🔍 Business User Guide: Slicing the Metrics
+
+This data model is designed to be "drag-and-drop" ready in tools like Tableau, Looker, or Metabase. Here is how to map business questions to the available dimensions:
+
+| **To Analyze...**       | **Use Field...**   | **Description & Usage**                                                                                                                               |
+| :---------------------- | :----------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Time / Trend**        | `risk_month`       | Derived from **Due Date**. Use this to visualize when risk is expected to materialize (e.g., "Show me Expected Loss for October vs. November").       |
+| **Segment (Geography)** | `buyer_state`      | The specific Brazilian state code (e.g., SP, RJ). Use this for map visualizations or regional risk concentration analysis.                            |
+| **Risk Profile**        | `current_rating`   | The credit rating (A-F) at the time of reporting. Use this to filter out low-risk assets or focus on high-risk exposure.                              |
+| **Cohort (Vintage)**    | `asset_id` (Count) | While the primary aggregation is by Risk Month, you can drill down into individual assets in the Fact table to see `created_at` for vintage analysis. |
+
+**Example BI Configuration (e.g., Tableau):**
+
+1.  **Rows:** Drag `buyer_state`.
+2.  **Columns:** Drag `risk_month`.
+3.  **Values:** Drag `total_expected_loss`.
+
+- _Result:_ A heatmap showing where and when we expect the highest losses.
+
+---
+
+## 5. The Semantic Layer (MetricFlow)
+
+A time spine (`metricflow_time_spine`) was registered to allow for continuous time-series analysis (filling gaps for months with zero activity).
 
 **Entities:**
 
@@ -65,7 +92,7 @@ This project leverages the modern dbt Semantic Layer. A time spine (`metricflow_
 dbt sl query --metrics total_loss --group-by buyer_state
 ```
 
-## 5. How to Run
+## 6. How to Run
 
 Install Dependencies:
 
@@ -81,8 +108,10 @@ dbt build --full-refresh
 
 Note: Full refresh is recommended to regenerate the unique surrogate keys.
 
-## 6. Assumptions
+## 7. Assumptions
 
 **Unrated Policy**: Buyers without a match in the ratings table are currently excluded (Inner Join) to prioritize auditability over estimation.
 
 **Versioning**: If a loan's Due Date changes, it is treated as a separate ledger entry for the purpose of historical risk analysis.
+
+**Source Data**: We assume the database name is credix-challenge. For production, this should be parameterized via \_sources.yml.
