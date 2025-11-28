@@ -16,7 +16,7 @@ This project establishes a scalable, trusted data pipeline to calculate the **Co
 
 The project follows a standard Medallion Architecture (Bronze -> Silver -> Gold) using **dbt Core** and **BigQuery**.
 
-![Lineage Graph](lineage_graph.png)
+![Lineage Graph]([lineage_graph.png](https://github.com/elbruy/credix_challenge/blob/main/docs/Gemini_Generated_Lineage_Graph.png?raw=true))
 
 - **Staging (Bronze):** Cleaning, casting, and "Ultimate Surrogate Key" generation.
 - **Intermediate (Silver):** Logic isolation.
