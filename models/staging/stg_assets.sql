@@ -3,15 +3,17 @@ with
 
     explicit_cast_and_rename as (
         select
-            -- surrogate key creation
+            -- surrogate key creation (coalesce avoids breaking BQ)
             to_hex(
                 md5(
                     concat(
-                        coalesce(cast(created_at as string), 'MISSING_TIMESTAMP'),
-                        coalesce(cast(buyer_tax_id as string), 'MISSING_TAX_ID'),
-                        coalesce(cast(face_value as string), 'MISSING_FACE_VALUE'),
-                        coalesce(cast(settled_at as string), 'MISSING_SETTLEMENT_DATE'),
-                        coalesce(buyer_state, 'MISSING_BUYER_STATE')
+                        coalesce(cast(created_at as string), 'NO_CREATED_AT'),
+                        coalesce(cast(buyer_tax_id as string), 'NO_TAX_ID'),
+                        coalesce(cast(face_value as string), 'NO_FACE_VALUE'),
+                        coalesce(cast(settled_at as string), 'NO_SETTLEMENT_DATE'),
+                        coalesce(cast(buyer_state as string), 'NO_BUYER_STATE'),
+                        coalesce(cast(due_date as string), 'NO_DUE_DATE'),
+                        coalesce(cast(collection_status as string), 'NO_STATUS')
                     )
                 )
             ) as asset_id,
