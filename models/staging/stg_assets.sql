@@ -1,6 +1,12 @@
 with
     source as (select * from {{ source("raw_data", "assets") }}),
 
+    -- remove exact duplicates that come from new raw file
+    deduped as (select distinct * from source),
+
+    -- filter out 0 value artifacts once they are not real loans
+    filtered as (select * from deduped where face_value > 0),
+
     explicit_cast_and_rename as (
 
         select
@@ -27,7 +33,7 @@ with
             cast(settled_at as timestamp) as settled_at,
             cast(due_date as date) as due_date
 
-        from source
+        from filtered
 
     )
 
