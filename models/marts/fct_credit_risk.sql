@@ -1,6 +1,5 @@
 with
     assets as (select * from {{ ref("stg_assets") }}),
-
     ratings as (select * from {{ ref("int_latest_ratings") }}),
 
     joined as (
@@ -12,7 +11,6 @@ with
             a.due_date,
             a.settled_at,
             a.buyer_state,
-            -- normalize status 
             case
                 when a.collection_status in ('Settled', 'Repaid', 'Paid')
                 then 'Settled'
@@ -35,9 +33,13 @@ with
                 -- no risk
                 when collection_status in ('Settled', 'Canceled')
                 then 0.0
-                -- defaulted
-                when date_diff(current_date, due_date, day) > 30
+
+                -- defaulted already
+                when
+                    collection_status = 'Defaulted'
+                    or date_diff(current_date, due_date, day) > 30
                 then 1.0
+
                 -- active
                 when current_rating = 'A'
                 then 0.01

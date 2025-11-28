@@ -2,7 +2,7 @@ with
     source as (select * from {{ source("raw_data", "assets") }}),
 
     explicit_cast_and_rename as (
-        select
+        select distinct
             -- surrogate key creation (coalesce avoids breaking BQ)
             to_hex(
                 md5(
