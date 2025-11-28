@@ -1,0 +1,97 @@
+Business Case | Analytics Engineer - Breno
+
+## **Context & Goal**
+
+Imagine a company that needs to build the data function from the ground up. This company has raw data in Postgres, but business stakeholders are "flying blind" regarding core unit economics, lacking trusted, scalable metrics.
+
+Your Mission: Bridge the gap between the raw database and business insights. Your goal is to build a data pipeline and a semantic definition for the most critical metric: Cost of Risk.
+
+We are looking for a solution that demonstrates how you structure data transformation (DBT), ensure data quality, and design metrics for business consumption (slicing and dicing).
+
+## The Dataset
+
+We will provide you with a fictional dataset (all data is synthetic and does not represent our current portfolio) containing the following csv’s:  
+
+**`assets.csv`:**
+
+- `created_at`: Timestamp of the asset creation
+- `asset_id`: Unique asset ID (UUID)
+- `collection_status`: Status of the asset (Settled, Canceled)
+- `face_value`: The value in BRL of the receivable
+- `settled_at`: When the money was actually repaid (TIMESTAMP, not DATE)
+- `due_date`: When the repayment is expected (DATE)
+- `buyer_tax_id`: CNPJ of the buyer
+- `seller_name`: Name of the seller
+- `buyer_state`: State code of the buyer (e.g., SP, MT, CE)
+
+**`ratings.csv`:**
+
+- `created_at`: Timestamp of the rating creation
+- `tax_id`: CNPJ of the buyer
+- `rating`: The point-in-time credit rating
+
+Data files: 
+
+[assets (1).csv](attachment:0662922f-7054-4294-96f2-02065ff9c821:assets_(1).csv)
+
+[ratings.csv](attachment:8f8e6863-3c37-41c5-b24e-200b83e0e537:ratings.csv)
+
+## 3. The Business Logic
+
+The Business Team defines **Cost of Risk** as the expected loss on our outstanding portfolio.
+
+- **Formula:** `Cost of Risk = Face Value * Provision Rate`
+- **Provision Rate Logic:**
+    - If the asset is **Settled** (Paid): Rate is **0%**.
+    - If the asset is **Defaulted** (Overdue by > 30 days): Rate is **100%**.
+    - If the asset is **Active** (Not due yet, or < 30 days overdue): Rate depends on the **Buyer Rating**:
+        - Rating A: **1%**
+        - Rating B: **5%**
+        - Rating C: **10%**
+        - Rating D: **20%**
+        - Rating E: **30%**
+        - Rating F: **40%**
+
+## The Process
+
+We are mimicking a real-world project flow.
+
+### Step 1: Discovery Call (30 mins)
+
+- You will meet with the "Risk team" (us).
+- **Goal:** We haven't told you everything. Use this time to ask clarifying questions about the business logic, edge cases, required dimensionality, and the "consumer" of this data.
+- *Tip: Treat us like stakeholders, not interviewers.*
+
+### Step 2: Implementation (Take-home)
+
+- Build the solution using your preferred stack.
+- Produce a "Gold/Mart" table and a Semantic Layer definition. Bonus points if you integrate it with a business intelligence tool (or Google Sheets).
+- Must haves:
+    - Use dbt
+    - Leverage the dbt semantic layer (you can start a free trial to use this functionality). Read more here: https://docs.getdbt.com/docs/use-dbt-semantic-layer/dbt-sl
+
+### Step 3: Presentation (1h)
+
+- Walk us through your architecture.
+- Show us the calculated metrics (e.g., "What was the Cost of Risk for the 'Retail' segment in October?").
+- Explain your design choices: Why did you structure the tables this way? How do you handle history?
+
+## Deliverables
+
+Please submit a GitHub repository (or a zipped folder) containing:
+
+1. **The Code:** SQL/dbt models and pipelines.
+2. **The Documentation:** A `README.md` explaining:
+    - Your lineage graph (how data flows).
+    - Assumptions you made.
+    - How a business user (e.g., in Tableau/Looker) would slice this metric by **Cohort**, **Segment**, or **Time**.
+3. **The Output:** A simple CSV or screenshot showing the final numbers aggregated by Month and Segment.
+
+## Evaluation Criteria
+
+We are **not** looking for complex Python scripts or machine learning models. We are looking for:
+
+- **Simplicity & Clarity:** Can other engineers read your code?
+- **Business alignment:** Does your data model actually answer business questions (drilling down, aggregating)?
+- **Reliability:** How do you know the numbers are right?
+- **Communication:** Did you ask the right questions during the Discovery Call?
