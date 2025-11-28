@@ -14,9 +14,13 @@ with
             a.buyer_state,
             -- normalize status 
             case
-                when a.collection_status in ('Settled', 'Repaid')
+                when a.collection_status in ('Settled', 'Repaid', 'Paid')
                 then 'Settled'
-                else a.collection_status
+                when a.collection_status in ('Default', 'Defaulted')
+                then 'Defaulted'
+                when a.collection_status = 'Canceled'
+                then 'Canceled'
+                else 'Active'
             end as collection_status,
             r.current_rating
         from assets a
