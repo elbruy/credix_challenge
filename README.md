@@ -2,7 +2,7 @@
 
 ## 1. Project Overview & Goal
 
-This project establishes a scalable data pipeline to calculate the **Cost of Risk** (Expected Loss) for the credit portfolio. It transforms raw postgres data into a trusted Mart and a Semantic Layer to answer: _How much money are we expected to lose based on current portfolio performance?_
+This project establishes a scalable data pipeline to calculate the **Cost of Risk** (Expected Loss) for the credit portfolio. It transforms raw Postgres data into a trusted Mart and a Semantic Layer to answer: _How much money are we expected to lose based on current portfolio performance?_
 
 ### Key Metrics Implemented
 
@@ -12,60 +12,77 @@ This project establishes a scalable data pipeline to calculate the **Cost of Ris
 
 ## 2. Architecture & Lineage
 
-The project follows a standard Medallion Architecture (Bronze -> Silver -> Gold):
+The project follows a standard Medallion Architecture (Bronze -> Silver -> Gold) using **dbt Core** and **BigQuery**:
 
 - **Staging (Bronze):** Cleaning, casting, and surrogate key generation.
 - **Intermediate (Silver):** Logic isolation.
-  - `int_latest_ratings`: Handles the "Many-to-One" relationship of ratings to buyers, isolating the _latest_ valid rating.
+  - `int_latest_ratings`: Handles the "Many-to-One" relationship of ratings to buyers, isolating the _latest_ valid rating using window functions.
 - **Facts (Gold):** Business logic application (`fct_credit_risk`).
 - **Semantic Layer:** MetricFlow definition (`credit_risk.yml`) for consistent slicing by time and cohort.
 
-## 3. Key Design Decisions & Assumptions
+## 3. Data Engineering Challenges & Solutions
 
-### A. Handling "Time Travel" (Data Quality)
+During the development phase, we encountered and resolved three critical data quality issues.
 
-During the discovery phase, I identified a critical data quality issue where assets appeared to be settled _before_ they were created.
+### A. The "Ghost Loan" Artifacts
 
-- **Impact:** This would skew "Time to Settle" metrics and invalidate risk aging.
-- **Resolution:** Validated with stakeholders and utilized the corrected dataset. Added `assert_positive_duration` tests to prevent regression.
+- **Issue:** The raw dataset contained ~450+ records with `face_value = 0.00` and status `Settled`.
+- **Diagnosis:** These appeared to be technical artifacts or system logs rather than valid financial liabilities.
+- **Solution:** Implemented a strict filter in `stg_assets` to exclude zero-value records, preventing the artificial inflation of the "Loan Count" metric (which would have skewed average ticket size analysis).
 
-### B. The Unrated Buyer Policy
+### B. Versioning vs. Duplication
 
-The pipeline currently performs an **INNER JOIN** between Assets and Ratings.
+- **Issue:** The system logs multiple rows for the "same" loan when attributes change (e.g., a **Due Date** renegotiation or a **Settlement Date** update). Standard `SELECT DISTINCT` failed to deduplicate these because the rows were not identical.
+- **Decision:** Instead of arbitrarily picking one row, we treated these as **Distinct Asset Versions**.
+- **Solution:** Implemented an "Ultimate Surrogate Key" in `stg_assets` that hashes **all** business attributes (`State`, `Settlement`, `Due Date`, `Status`).
+  - _Result:_ A Due Date extension is treated as a new liability version, ensuring full traceability of contractual changes without dropping data.
 
-- **Decision:** Buyers without a credit rating are excluded from the Risk Model.
-- **Rationale:** We prioritize **auditability** over estimation. Assigning a default risk (e.g., "C") to unknown entities creates hidden risk. These records are flagged in data quality tests rather than silently backfilled.
+### C. The "Implicit Default" Logic Gap
 
-### C. Dynamic Ratings
+- **Issue:** Some loans were marked as `Active` in the source system despite being >30 days overdue.
+- **Impact:** Calculating Provision Rate based solely on the raw status resulted in dangerous under-provisioning (assigning 5% risk to what should be 100% risk).
+- **Solution:** Implemented a "Business Logic Override" in `fct_credit_risk`.
+  - _Logic:_ If `days_overdue > 30`, the status is forced to `Defaulted` (100% Provision), regardless of the raw system label.
 
-Credit risk is not static. The model uses a Window Function (`ROW_NUMBER`) to apply the rating active _at the moment of reporting_, ensuring the Cost of Risk reflects the buyer's current financial health, not their historical status at origination.
+## 4. The Semantic Layer (MetricFlow)
 
-## 4. How to Consume
+This project leverages the modern dbt Semantic Layer. A time spine (`metricflow_time_spine`) was registered to allow for continuous time-series analysis.
 
-### BI & Analytics
+**Entities:**
 
-The table `mart_monthly_risk_summary` is pre-aggregated for high-performance dashboards (e.g., Looker Studio), grouped by:
+- `asset_id` (Primary)
+- `buyer_tax_id` (Foreign)
 
-- `risk_month`
-- `buyer_state` (Geographic Concentration)
-- `current_rating`
+**Metrics:**
 
-### Semantic Layer (dbt sl)
+- `total_exposure`: Sum of Face Value.
+- `total_loss`: Sum of Cost of Risk.
+- `portfolio_provision_rate`: Ratio of `total_loss` / `total_exposure`.
 
-For ad-hoc exploration, use the Semantic Layer to slice metrics without writing SQL:
+### Ad-Hoc Query Example
 
-```bash
-dbt sl query --metrics total_loss --group-by buyer_state,risk_month
-
-## 5. Future Roadmap (Production Readiness)
-If moving this to production, the following steps would be prioritized:
-
-### Orchestration
-Move from dbt Cloud scheduler to Airflow/Dagster to handle dependencies between ingestion (Postgres -> BQ) and transformation.
-
-### Incremental Models
-Convert fct_credit_risk to incremental strategy merge to optimize BigQuery costs as the portfolio scales to millions of rows.
-
-### Data Contracts
-Implement contracts at the ingestion source to prevent schema drift (e.g., face_value changing from Numeric to String).
 ```
+dbt sl query --metrics total_loss --group-by buyer_state
+```
+
+## 5. How to Run
+
+Install Dependencies:
+
+```
+dbt deps
+```
+
+Build the Project:
+
+```
+dbt build --full-refresh
+```
+
+Note: Full refresh is recommended to regenerate the unique surrogate keys.
+
+## 6. Assumptions
+
+**Unrated Policy**: Buyers without a match in the ratings table are currently excluded (Inner Join) to prioritize auditability over estimation.
+
+**Versioning**: If a loan's Due Date changes, it is treated as a separate ledger entry for the purpose of historical risk analysis.
