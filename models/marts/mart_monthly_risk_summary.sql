@@ -2,7 +2,7 @@ with fct_risk as (select * from {{ ref("fct_credit_risk") }})
 
 select
     date_trunc(due_date, month) as risk_month,
-    buyer_state as segment,
+    buyer_state,
     current_rating,
     count(distinct asset_id) as total_loans,
     sum(face_value) as total_exposure,
